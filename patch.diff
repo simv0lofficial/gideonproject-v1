@@ -1,0 +1,1135 @@
+From 95b545229281fc8a41a6d2e637098ebb372e8508 Mon Sep 17 00:00:00 2001
+From: GayPig <serbianbabnik@gmail.com>
+Date: Sun, 4 Nov 2018 04:46:59 +0400
+Subject: [PATCH] huynya tam dohuya vsego
+
+---
+ Backend/Configuration/Config.cpp            |   3 +
+ Backend/Configuration/Config.h              |   1 +
+ Backend/DLL/Engine.cpp                      |  68 +++++------
+ Backend/DLL/Main.cpp                        |   5 +-
+ Backend/Features/Legitbot/Aimbot.cpp        |   8 +-
+ Backend/Features/Legitbot/Aimbot.h          |   3 +-
+ Backend/Features/Misc/LagCompensation.cpp   |  80 ++++++-------
+ Backend/Features/Misc/Misc.cpp              |  53 +++++----
+ Backend/Features/Misc/Misc.h                |  18 +++
+ Backend/Hooking/Functions/PaintTreverse.hpp | 118 +++++++++----------
+ Backend/Hooking/Hooks/Hooks.cpp             |   7 +-
+ Backend/Hooking/Hooks/Hooks.h               |   5 +-
+ Backend/Hooking/VTableHooking.cpp           |  65 -----------
+ Backend/Hooking/VTableHooking.h             | 174 ++++++++++++++++++++++++----
+ Backend/SDK/CBaseEntity.h                   |   6 +-
+ Backend/Utility/Timer.cpp                   |  11 +-
+ Frontend/Menu/Menu.cpp                      |  39 +++++--
+ Other/version.h                             |   6 +-
+ 18 files changed, 392 insertions(+), 278 deletions(-)
+
+diff --git a/Backend/Configuration/Config.cpp b/Backend/Configuration/Config.cpp
+index 9b704f0..a006f22 100644
+--- a/Backend/Configuration/Config.cpp
++++ b/Backend/Configuration/Config.cpp
+@@ -325,6 +325,7 @@ void CConfig::SaveConfig()
+ 		WriteBool("Legit", "Legit_WallAttack", Legit_WallAttack);
+ 		WriteBool("Legit", "Legit_SmokeCheck", Legit_SmokeCheck);
+ 		WriteBool("Legit", "Legit_JumpCheck", Legit_JumpCheck);
++		WriteBool("Legit", "Legit_EnginePrediction", Legit_EnginePrediction);
+ 		WriteBool("Legit", "Legit_DrawFOV", Legit_DrawFOV);
+ 		WriteBool("Legit", "Legit_DrawAimSpot", Legit_DrawAimSpot);
+ 		for (int i = 0; i < 5; i++)
+@@ -790,6 +791,7 @@ void CConfig::LoadConfig()
+ 	Legit_SmokeCheck = ReadBool("Legit", "Legit_SmokeCheck", false);
+ 	Legit_JumpCheck = ReadBool("Legit", "Legit_JumpCheck", false);
+ 	Legit_DrawFOV = ReadBool("Legit", "Legit_DrawFOV", false);
++	Legit_EnginePrediction = ReadBool("Legit", "Legit_EnginePrediction", false);
+ 	Legit_DrawAimSpot = ReadBool("Legit", "Legit_DrawAimSpot", false);
+ 
+ 	for (int i = 0; i < 5; i++)
+@@ -1117,6 +1119,7 @@ void CConfig::ResetConfig()
+ 	Legit_FriendlyFire = false;
+ 	Legit_WallAttack = false;
+ 	Legit_SmokeCheck = false;
++	Legit_DrawAimSpot = false;
+ 	Legit_JumpCheck = false;
+ 	Legit_DrawFOV = false;
+ 	Legit_DrawAimSpot = false;
+diff --git a/Backend/Configuration/Config.h b/Backend/Configuration/Config.h
+index b862bb0..f480282 100644
+--- a/Backend/Configuration/Config.h
++++ b/Backend/Configuration/Config.h
+@@ -114,6 +114,7 @@ namespace Cheat {
+ 		bool Legit_WallAttack = false;
+ 		bool Legit_SmokeCheck = false;
+ 		bool Legit_JumpCheck = false;
++		bool Legit_EnginePrediction = false;
+ 		bool Legit_DrawFOV = false;
+ 		bool Legit_DrawAimSpot = false;	
+ 
+diff --git a/Backend/DLL/Engine.cpp b/Backend/DLL/Engine.cpp
+index 28f7436..7095f6f 100644
+--- a/Backend/DLL/Engine.cpp
++++ b/Backend/DLL/Engine.cpp
+@@ -90,23 +90,23 @@ bool Cheat::Initialize() {
+ 		Utilities->Console_Log("Preparing hooking managers (1/1)");
+ 	}
+ 	
+-	Hooking::VTableHook* DirectXManager	= new Hooking::VTableHook(**reinterpret_cast< void*** >((Utilities->Memory_PatternScan("shaderapidx9.dll", "A1 ? ? ? ? 6A 00 53") + 1)));
+-	Hooking::VTableHook* SurfaceManager = nullptr;
+-	Hooking::VTableHook* PanelManager = nullptr;
+-	Hooking::VTableHook* ClientManager = nullptr;
+-	Hooking::VTableHook* ClientModeManager = nullptr;
+-	Hooking::VTableHook* ModelRenderManager = nullptr;
+-	Hooking::VTableHook* RenderViewManager = nullptr;
+-	Hooking::VTableHook* EngineSoundManager = nullptr;
++	std::unique_ptr<Hooking::VTableHook> DirectXManager = std::make_unique<Hooking::VTableHook>();   	DirectXManager->Setup(**reinterpret_cast<void***>((Utilities->Memory_PatternScan("shaderapidx9.dll", "A1 ? ? ? ? 6A 00 53") + 1)));
++	std::unique_ptr<Hooking::VTableHook> SurfaceManager = std::make_unique<Hooking::VTableHook>();
++	std::unique_ptr<Hooking::VTableHook> PanelManager = std::make_unique<Hooking::VTableHook>();
++	std::unique_ptr<Hooking::VTableHook> ClientManager = std::make_unique<Hooking::VTableHook>();
++	std::unique_ptr<Hooking::VTableHook> ClientModeManager = std::make_unique<Hooking::VTableHook>();
++	std::unique_ptr<Hooking::VTableHook> ModelRenderManager = std::make_unique<Hooking::VTableHook>();
++	std::unique_ptr<Hooking::VTableHook> RenderViewManager = std::make_unique<Hooking::VTableHook>();
++	std::unique_ptr<Hooking::VTableHook> EngineSoundManager = std::make_unique<Hooking::VTableHook>();
+ 
+ 	if (!Settings->UIDevMode) {
+-		SurfaceManager = new Hooking::VTableHook(Interfaces::Surface);
+-		PanelManager = new Hooking::VTableHook(Interfaces::GuiPanel);
+-		ClientManager = new Hooking::VTableHook(Interfaces::Client);
+-		ClientModeManager = new Hooking::VTableHook(Interfaces::ClientMode);
+-		ModelRenderManager = new Hooking::VTableHook(Interfaces::ModelRender);
+-		RenderViewManager = new Hooking::VTableHook(Interfaces::RenderView);
+-		EngineSoundManager = new Hooking::VTableHook(Interfaces::EngineSound);
++		SurfaceManager->Setup(Interfaces::Surface);
++		PanelManager->Setup(Interfaces::GuiPanel);
++		ClientManager->Setup(Interfaces::Client);
++		ClientModeManager->Setup(Interfaces::ClientMode);
++		ModelRenderManager->Setup(Interfaces::ModelRender);
++		RenderViewManager->Setup(Interfaces::RenderView);
++		EngineSoundManager->Setup(Interfaces::EngineSound);
+ 	}
+ 
+ 	if (!Settings->UIDevMode) {
+@@ -114,39 +114,39 @@ bool Cheat::Initialize() {
+ 		g_pGameEvents.InitializeEventListeners();
+ 
+ 		Utilities->Console_Log("Hooking VPanel (1/1)");
+-		oPaintTraverse = (fnPaintTraverse)PanelManager->Hook(41, PaintTraverseHook);
++		PanelManager->Hook(41, PaintTraverseHook);  oPaintTraverse = PanelManager->GetOriginal<fnPaintTraverse>(41);
+ 
+ 		Utilities->Console_Log("Hooking RenderView (1/1)");
+-		oSceneEnd = (fnSceneEnd)RenderViewManager->Hook(9, SceneEndHook);
++		RenderViewManager->Hook(9, SceneEndHook);  oSceneEnd = RenderViewManager->GetOriginal<fnSceneEnd>(9);
+ 
+ 		Utilities->Console_Log("Hooking ModelRender (1/1)");
+-		oDrawModelExecute = (fnDrawModelExecute)ModelRenderManager->Hook(21, DrawModelExecuteHook);
++		ModelRenderManager->Hook(21, DrawModelExecuteHook);  oDrawModelExecute = ModelRenderManager->GetOriginal<fnDrawModelExecute>(21);
+ 
+ 		Utilities->Console_Log("Hooking Surface (1/1)");
+-		oLockCursor = (fnLockCursor)SurfaceManager->Hook(67, LockCursorHook);
++		SurfaceManager->Hook(67, LockCursorHook);  oLockCursor = SurfaceManager->GetOriginal<fnLockCursor>(67);
+ 	}
+ 
+ 	Utilities->Console_Log("Hooking DirectX 9 (1/2)");
+-	oEndScene = (fnEndScene)DirectXManager->Hook(42, EndSceneHook);
++	DirectXManager->Hook(42, EndSceneHook); oEndScene = DirectXManager->GetOriginal<fnEndScene>(42);
+ 
+ 	Utilities->Console_Log("Hooking DirectX 9 (2/2)");
+-	oReset = (fnReset)DirectXManager->Hook(16, ResetHook);
++	DirectXManager->Hook(16, ResetHook);  oReset = DirectXManager->GetOriginal<fnReset>(16);
+ 
+ 	if (!Settings->UIDevMode) {
+ 		Utilities->Console_Log("Hooking Client (1/1)");
+-		oFrameStageNotify = (fnFrameStageNotify)ClientManager->Hook(37, FrameStageNotifyHook);
++		ClientManager->Hook(37, FrameStageNotifyHook); oFrameStageNotify = ClientManager->GetOriginal<fnFrameStageNotify>(37);
+ 
+ 		Utilities->Console_Log("Hooking ClientMode (1/3)");
+-		oCreateMove = (fnCreateMove)ClientModeManager->Hook(24, CreateMoveHook);
++		ClientModeManager->Hook(24, CreateMoveHook);  oCreateMove = ClientModeManager->GetOriginal<fnCreateMove>(24);
+ 
+ 		Utilities->Console_Log("Hooking ClientMode (2/3)");
+-		oDoPostScreenSpaceEffects = (fnDoPostScreenSpaceEffects)ClientModeManager->Hook(44, DoPostScreenSpaceEffectsHook);
++		ClientModeManager->Hook(44, DoPostScreenSpaceEffectsHook);  oDoPostScreenSpaceEffects = ClientModeManager->GetOriginal<fnDoPostScreenSpaceEffects>(44);
+ 
+ 		Utilities->Console_Log("Hooking ClientMode (3/3)");
+-		oOverrideView = (fnOverrideView)ClientModeManager->Hook(18, OverrideViewHook);
++		ClientModeManager->Hook(18, OverrideViewHook); oOverrideView = ClientModeManager->GetOriginal<fnOverrideView>(18);
+ 
+ 		Utilities->Console_Log("Hooking EngineSound (1/1)");
+-		oEmitSound = (fnEmitSound)EngineSoundManager->Hook(5, EmitSoundHook);
++		EngineSoundManager->Hook(5, EmitSoundHook);  oEmitSound = EngineSoundManager->GetOriginal<fnEmitSound>(5);
+ 	}
+ 
+ 	Utilities->Console_Log("Hooking WndProc");
+@@ -154,29 +154,29 @@ bool Cheat::Initialize() {
+ 	oWndProc = (WNDPROC)SetWindowLongPtr(hWnd, GWL_WNDPROC, (LONG)&WndProcHook);
+ 
+ 	Utilities->Console_Log("Saving hooking managers (1/8)");
+-	Hooking::Hooks->AddHookMgr("d3dx9", DirectXManager);
++	Hooking::Hooks->AddHookMgr("d3dx9", std::move(DirectXManager));
+ 
+ 	if (!Settings->UIDevMode) {
+ 		Utilities->Console_Log("Saving hooking managers (2/8)");
+-		Hooking::Hooks->AddHookMgr("VGUI_Surface", SurfaceManager);
++		Hooking::Hooks->AddHookMgr("VGUI_Surface", std::move(SurfaceManager));
+ 
+ 		Utilities->Console_Log("Saving hooking managers (3/8)");
+-		Hooking::Hooks->AddHookMgr("ClientMode", ClientModeManager);
++		Hooking::Hooks->AddHookMgr("ClientMode", std::move(ClientModeManager));
+ 
+ 		Utilities->Console_Log("Saving hooking managers (4/8)");
+-		Hooking::Hooks->AddHookMgr("Client", ClientManager);
++		Hooking::Hooks->AddHookMgr("Client", std::move(ClientManager));
+ 
+ 		Utilities->Console_Log("Saving hooking managers (5/8)");
+-		Hooking::Hooks->AddHookMgr("VGuiPanel", PanelManager);
++		Hooking::Hooks->AddHookMgr("VGuiPanel", std::move(PanelManager));
+ 
+ 		Utilities->Console_Log("Saving hooking managers (6/8)");
+-		Hooking::Hooks->AddHookMgr("ModelRender", ModelRenderManager);
++		Hooking::Hooks->AddHookMgr("ModelRender", std::move(ModelRenderManager));
+ 
+ 		Utilities->Console_Log("Saving hooking managers (7/8)");
+-		Hooking::Hooks->AddHookMgr("RenderView", RenderViewManager);
++		Hooking::Hooks->AddHookMgr("RenderView", std::move(RenderViewManager));
+ 
+ 		Utilities->Console_Log("Saving hooking managers (8/8)");
+-		Hooking::Hooks->AddHookMgr("EngineSound", EngineSoundManager);
++		Hooking::Hooks->AddHookMgr("EngineSound", std::move(EngineSoundManager));
+ 	}
+ 
+ 	return true;
+diff --git a/Backend/DLL/Main.cpp b/Backend/DLL/Main.cpp
+index 3808e35..843efd3 100644
+--- a/Backend/DLL/Main.cpp
++++ b/Backend/DLL/Main.cpp
+@@ -169,7 +169,7 @@ void __stdcall MainThread(LPVOID lpParam) {
+ 			MessageBoxA(0, "This cheat is currently in 'detected' detection state. This means that here's big chance of getting banned.\n\nWe're currently working on a fix, you will receive an update when it's done.", "Warning!", MB_APPLMODAL | MB_OK);
+ 	}
+ 	
+-	Beep(250, 250);
++
+ 
+ 	if (Cheat::Settings->ShowConsole)
+ 		Cheat::Utilities->Console_Create("GideonProject BETA");
+@@ -222,8 +222,7 @@ void __stdcall MainThread(LPVOID lpParam) {
+ 
+ 	Cheat::Initialize();
+ 
+-	Beep(250, 250);
+-	Beep(500, 250);
++
+ 
+ 	Features::EventLogger->AddLog(std::string("Welcome, " + Cheat::Settings->UserName).c_str());
+ 	Interfaces::Var->ConsoleColorPrintf(im2pt(Config->Misc_PrefixColor, 1.f), "[gideonproject] ");
+diff --git a/Backend/Features/Legitbot/Aimbot.cpp b/Backend/Features/Legitbot/Aimbot.cpp
+index 2c5c7c5..e4b4f95 100644
+--- a/Backend/Features/Legitbot/Aimbot.cpp
++++ b/Backend/Features/Legitbot/Aimbot.cpp
+@@ -546,7 +546,7 @@ void CLegitAimbot::Do()
+ 	static bool bLockDelay = false;
+ 	static bool bLockAttack = false;
+ 
+-	if (!(G::UserCmd->buttons & IN_ATTACK) || m_bTargetChange)
++	if (!(G::UserCmd->buttons & IN_ATTACK))
+ 	{
+ 		m_bClamp = true;
+ 		bLockDelay = false;
+@@ -724,7 +724,7 @@ void CLegitAimbot::Draw()
+ 			Cheat::Utilities->Game_VectorTransform(pHitbox->bbmax, pBoneToWorldOut[pHitbox->bone], vMax);
+ 
+ 			if (pHitbox->radius > -1)
+-				Interfaces::DebugOverlay->AddCapsuleOverlay(vMin, vMax, pHitbox->radius + 2.f, TargetFovColor.r(), TargetFovColor.g(), TargetFovColor.b(), 250, 0.1f);
++				Interfaces::DebugOverlay->AddCapsuleOverlay(vMin, vMax, pHitbox->radius + 2.f, TargetFovColor.r(), TargetFovColor.g(), TargetFovColor.b(), 250, Config->Legit_EnginePrediction ? 0.1f : 0.f);
+ 		}
+ 	}
+ 
+@@ -733,8 +733,8 @@ void CLegitAimbot::Draw()
+ 		int iPlayerFov = GetPlayerFov(pTargetPlayer);
+ 
+ 		if (weapon(m_pCurrentWeapon).Aimbot_FOVType <= 0)
+-			Graphics::Drawing->DrawCircle(m_vAimBestHitboxScreen.x - iPlayerFov, m_vAimBestHitboxScreen.y - iPlayerFov,
+-				iPlayerFov * 2,TargetFovColor);
++			Graphics::Drawing->DrawCircle(m_vAimBestHitboxScreen.x, m_vAimBestHitboxScreen.y,
++				iPlayerFov,TargetFovColor);
+ 		else
+ 			Graphics::Drawing->DrawCircle(G::iScreenWidth / 2, G::iScreenHeight / 2, iPlayerFov, TargetFovColor);
+ 	}
+diff --git a/Backend/Features/Legitbot/Aimbot.h b/Backend/Features/Legitbot/Aimbot.h
+index eb5147c..44ac95e 100644
+--- a/Backend/Features/Legitbot/Aimbot.h
++++ b/Backend/Features/Legitbot/Aimbot.h
+@@ -49,4 +49,5 @@ namespace Features {
+ 
+ 	extern CLegitAimbot* LegitAimbot;
+ 	extern CTimer* m_pShotDelay;
+-}
+\ No newline at end of file
++}
++extern LBWeapon_t weapon(CBaseWeapon* activeweapon);
+\ No newline at end of file
+diff --git a/Backend/Features/Misc/LagCompensation.cpp b/Backend/Features/Misc/LagCompensation.cpp
+index 078e37a..02823a2 100644
+--- a/Backend/Features/Misc/LagCompensation.cpp
++++ b/Backend/Features/Misc/LagCompensation.cpp
+@@ -2,6 +2,7 @@
+ #include "../../Configuration/Config.h"
+ #include "../../SDK/INetChannelInfo.h"
+ #include "../../SDK/player_info_t.h"
++#include "../Legitbot/Aimbot.h"
+ 
+ using namespace Features;
+ using namespace Cheat;
+@@ -9,6 +10,9 @@ CLagCompensation* Features::LagCompensation = new CLagCompensation();
+ 
+ #define TICK_INTERVAL			( Interfaces::Globals->interval_per_tick )
+ #define TIME_TO_TICKS( dt )		( (int)( 0.5f + (float)(dt) / TICK_INTERVAL ) )
++#define ConfigGun(t, x) case t: \
++	return x;
++
+ 
+ inline float distance_point_to_line(Vector Point, Vector LineOrigin, Vector Dir)
+ {
+@@ -25,7 +29,7 @@ inline float distance_point_to_line(Vector Point, Vector LineOrigin, Vector Dir)
+ 
+ void CLagCompensation::Update(int tick_count)
+ {
+-	if (!Config->Misc_PingSpike || !(Config->Misc_PingSpikeKey && GetAsyncKeyState(Config->Misc_PingSpikeKey)))
++	if (!Config->Legit_EnginePrediction || !Features::LegitAimbot->IsEnable() || !weapon(G::LocalPlayer->GetActiveWeapon()).Aimbot_Active)
+ 		return;
+ 
+ 	latest_tick = tick_count;
+@@ -61,7 +65,7 @@ void CLagCompensation::UpdateRecord(int i)
+ 
+ void CLagCompensation::CompensateLegit(CUserCmd* cmd, CBaseEntity* pLocal)
+ {
+-	if (Config->Misc_PingSpike || (Config->Misc_PingSpike && Config->Misc_PingSpikeKey && GetAsyncKeyState(Config->Misc_PingSpikeKey)))
++	if (Config->Legit_EnginePrediction && Features::LegitAimbot->IsEnable() && weapon(G::LocalPlayer->GetActiveWeapon()).Aimbot_Active)
+ 	{
+ 		int bestTargetIndex = -1;
+ 		float bestFov = FLT_MAX;
+@@ -87,46 +91,42 @@ void CLagCompensation::CompensateLegit(CUserCmd* cmd, CBaseEntity* pLocal)
+ 			if (entity->IsDormant())
+ 				continue;
+ 
+-			if (entity->GetTeam() == pLocal->GetTeam())
++			if (entity->GetTeam() == pLocal->GetTeam() && !Config->Legit_FriendlyFire)
+ 				continue;
+ 
+-			if (entity->IsAlive())
+-			{
+-				float simtime = entity->GetSimTime();
+-				Vector hitboxPos = entity->GetHitboxPosition(HITBOX_HEAD);
+-
+-				headPositions[i][cmd->command_number % 13] = backtrackData{ simtime, hitboxPos };
+-				Vector ViewDir;
+-				Utilities->Math_AngleVectors(cmd->viewangles + (pLocal->GetPunchAngles() * 2.f), ViewDir);
+-				float FOVDistance = distance_point_to_line(hitboxPos, pLocal->GetEyePosition(), ViewDir);
+-
+-				if (bestFov > FOVDistance)
+-				{
+-					bestFov = FOVDistance;
+-					bestTargetIndex = i;
+-				}
+-			}
+-		}
+-
+-		float bestTargetSimTime;
+-		if (bestTargetIndex != -1)
+-		{
+-			float tempFloat = FLT_MAX;
+-			Vector ViewDir;
+-			Utilities->Math_AngleVectors(cmd->viewangles + (pLocal->GetPunchAngles() * 2.f), ViewDir);
+-
+-			for (int t = 0; t < 12; ++t)
+-			{
+-				float tempFOVDistance = distance_point_to_line(headPositions[bestTargetIndex][t].hitboxPos, pLocal->GetEyePosition(), ViewDir);
+-				if (tempFloat > tempFOVDistance && headPositions[bestTargetIndex][t].simtime > pLocal->GetSimTime() - 1)
+-				{
+-					tempFloat = tempFOVDistance;
+-					bestTargetSimTime = headPositions[bestTargetIndex][t].simtime;
+-				}
+-			}
+-
+-			if (cmd->buttons & IN_ATTACK)
+-				cmd->tick_count = TIME_TO_TICKS(bestTargetSimTime);
++
++			if (entity->IsAlive())
++			{
++				float simtime = entity->GetSimTime();
++				Vector hitboxPos = entity->GetHitboxPosition(HITBOX_HEAD);
++
++				headPositions[i][cmd->command_number % 13] = backtrackData{ simtime, hitboxPos };
++
++				bestFov = Features::LegitAimbot->GetPlayerFov(entity);
++				bestTargetIndex = Features::LegitAimbot->GetBestTarget();
++
++			}
++		}
++
++		float bestTargetSimTime;
++		if (bestTargetIndex != -1)
++		{
++			float tempFloat = FLT_MAX;
++			Vector ViewDir;
++			Utilities->Math_AngleVectors(cmd->viewangles + (pLocal->GetPunchAngles() * 2.f), ViewDir);
++
++			for (int t = 0; t < 12; ++t)
++			{
++				float tempFOVDistance = distance_point_to_line(headPositions[bestTargetIndex][t].hitboxPos, pLocal->GetEyePosition(), ViewDir);
++				if (headPositions[bestTargetIndex][t].simtime > pLocal->GetSimTime() - 1)
++				{
++					tempFloat = tempFOVDistance;
++					bestTargetSimTime = headPositions[bestTargetIndex][t].simtime;
++				}
++			}
++
++			if (cmd->buttons & IN_ATTACK)
++				cmd->tick_count = TIME_TO_TICKS(bestTargetSimTime);
+ 		}
+ 	}
+ }
+\ No newline at end of file
+diff --git a/Backend/Features/Misc/Misc.cpp b/Backend/Features/Misc/Misc.cpp
+index 27be98b..70113b2 100644
+--- a/Backend/Features/Misc/Misc.cpp
++++ b/Backend/Features/Misc/Misc.cpp
+@@ -4,16 +4,18 @@
+ #include "../../SDK/GlobalDefenitions.h"
+ #include "../../SDK/CUserCmd.h"
+ #include "../Legitbot/Aimbot.h"
++#include "../../SDK/player_info_t.h"
+ using namespace Features;
+ 
+ CMisc* Features::Misc = new CMisc();
+-
++PlayerListSett playerlistarr[64];
+ void CMisc::Run()
+ {
+ 	if (!Interfaces::Engine->IsConnected() || !Interfaces::Engine->IsInGame() || !G::LocalPlayer)
+ 		return;
+ 
+ 	FakeLag();
++	PlayerList();
+ 
+ 	if (Config->Misc_AutoJump)
+ 		BunnyHop();
+@@ -103,7 +105,29 @@ void CMisc::ServerRankRevealAll()
+ 
+ 	ServerRankRevealAll(fArray);
+ }
++void CMisc::PlayerList()
++{
++	for (int i = 1; i < Interfaces::Engine->GetMaxClients(); i++)
++	{
++		auto ent = Interfaces::EntityList->GetClientEntity(i);
++		if (ent == G::LocalPlayer)
++			return;
++		bool is_teammate = ent->GetTeam() == G::LocalPlayer->GetTeam();
++		bool is_dead = ent->IsAlive() && ent->GetHealth() > 0;
++		player_info_t info;
++		Interfaces::Engine->GetPlayerInfo(i, &info);
++
+ 
++		playerlistarr[i].playerptr = ent;
++		playerlistarr[i].info = info;
++
++		if (playerlistarr[i].apply)
++		{
++			ent->GetEyeAnglesPtr()->x = playerlistarr[i].pitch;
++			ent->GetEyeAnglesPtr()->y = playerlistarr[i].yaw;
++		}
++	}
++}
+ void CMisc::AutoWeapons()
+ {
+ 	if (G::LocalPlayer->GetActiveWeapon()->GetAmmoInClip() <= 0 && !G::LocalPlayer->GetActiveWeapon()->is_knife() && G::UserCmd->buttons & IN_ATTACK)
+@@ -287,27 +311,16 @@ void CMisc::BunnyHop()
+ 
+ 							BoxCircleStrafe::Stop();
+ 
+-							if (G::UserCmd->mousedx < 0)
+-							{
+-								G::UserCmd->forwardmove = 0;
+-								G::UserCmd->sidemove = -450.0f;
+-							}
+-							else if (G::UserCmd->mousedx > 0)
+-							{
+-								G::UserCmd->forwardmove = 0;
+-								G::UserCmd->sidemove = +450.0f;
+-							}
+-							else
+-							{
+-								Vector origAngles = G::UserCmd->viewangles;
++						
++							Vector origAngles = G::UserCmd->viewangles;
+ 
+-								if (G::UserCmd->sidemove < 0)
+-									origAngles += 45.0f;
+-								else if (G::UserCmd->sidemove > 0)
+-									origAngles -= 45.0f;
++							if (G::UserCmd->sidemove < 0)
++								origAngles += 45.0f;
++							else if (G::UserCmd->sidemove > 0)
++								origAngles -= 45.0f;
+ 
+-								AutoStrafer::BhopMovement(G::UserCmd, origAngles);
+-							}
++							AutoStrafer::BhopMovement(G::UserCmd, origAngles);
++							
+ 						}
+ 					}
+ 				}
+diff --git a/Backend/Features/Misc/Misc.h b/Backend/Features/Misc/Misc.h
+index e8938da..252fb55 100644
+--- a/Backend/Features/Misc/Misc.h
++++ b/Backend/Features/Misc/Misc.h
+@@ -4,11 +4,28 @@
+ #include "../../Configuration/Config.h"
+ #include "../../Configuration/Settings.h"
+ #include "../../SDK/GlobalDefenitions.h"
++#include "../../SDK/player_info_t.h"
+ 
+ #define CheckIfNonValidNumber(x) (fpclassify(x) == FP_INFINITE || fpclassify(x) == FP_NAN || fpclassify(x) == FP_SUBNORMAL)
+ #define TIME_TO_TICKS( dt )		( (int)( 0.5f + (float)(dt) /  Interfaces::Globals->interval_per_tick ) )
+ #define TICKS_TO_TIME( dt )		( Interfaces::Globals->interval_per_tick * (float)(dt) )
+ 
++struct PlayerListSett
++{
++	float yaw;
++	float pitch;
++	bool bodyaim;
++	bool prioritize;
++	bool apply;
++	bool selected;
++	player_info_t info;
++	
++
++	CBaseEntity* playerptr;
++}; extern PlayerListSett playerlistarr[64];
++
++
++
+ namespace Features
+ {
+ 	class CMisc {
+@@ -22,6 +39,7 @@ namespace Features
+ 		void KnifeBot();
+ 		void ClanTagChanger();
+ 		void ServerRankRevealAll();
++		void PlayerList();
+ 		void AutoWeapons();
+ 
+ 		Vector circleStrafeDbg;
+diff --git a/Backend/Hooking/Functions/PaintTreverse.hpp b/Backend/Hooking/Functions/PaintTreverse.hpp
+index 26181e2..fd7a59b 100644
+--- a/Backend/Hooking/Functions/PaintTreverse.hpp
++++ b/Backend/Hooking/Functions/PaintTreverse.hpp
+@@ -27,91 +27,91 @@ namespace Cheat
+ 		void __fastcall PaintTraverseHook(void *thisptr, void*, unsigned int vguiPanel, bool forceRepaint, bool allowForce)
+ 		{
+ 			const char* panel_name = Interfaces::GuiPanel->GetName(vguiPanel);
+-<<<<<<< Updated upstream
+ 
+ 			Graphics::Drawing->Initialize();
+ 
+ 			if (!(strstr(panel_name, "HudZoom") && Config->Vis_DisableScope)) {
+ 				oPaintTraverse(thisptr, vguiPanel, forceRepaint, allowForce);
+-=======
+-			WS_OVERLAPPEDWINDOW
+-			if (!(strstr(panel_name, "HudZoom") && Config->Vis_DisableScope))
+-				oPaintTraverse(thisptr, vguiPanel, forceRepaint, allowForce);
+ 
+-			if (strstr(panel_name, "FocusOverlayPanel")
+-				) {
+-				Graphics::Drawing->Initialize();
+->>>>>>> Stashed changes
+ 
+-				if (strstr(panel_name, "FocusOverlayPanel")) {
+-					if (Interfaces::Engine->IsInGame() && Interfaces::Engine->IsConnected() && G::LocalPlayer) {
+-						static auto svcheatsspoof = new SpoofedConvar("sv_cheats");
+-						svcheatsspoof->SetInt(1);
++				if (!(strstr(panel_name, "HudZoom") && Config->Vis_DisableScope))
++					oPaintTraverse(thisptr, vguiPanel, forceRepaint, allowForce);
+ 
+-						if (Interfaces::Engine->IsConnected() && Interfaces::Engine->IsInGame()) {
+-							if (G::LocalPlayer)
+-							{
+-								Features::Visuals->Run();
+-								Features::Visuals->RunSpectators();
++				if (strstr(panel_name, "FocusOverlayPanel")
++					) {
++					Graphics::Drawing->Initialize();
+ 
+-								if (G::LocalPlayer->GetHealth() > 0 && G::LocalPlayer->IsAlive())
+-								{
+-									auto recoilspoof = Interfaces::Var->FindVar("cl_crosshair_recoil");
+ 
+-									if (Config->Vis_RecoilOverlay)
+-										recoilspoof->SetValue(1);
+-									else
+-										recoilspoof->SetValue(0);
++					if (strstr(panel_name, "FocusOverlayPanel")) {
++						if (Interfaces::Engine->IsInGame() && Interfaces::Engine->IsConnected() && G::LocalPlayer) {
++							static auto svcheatsspoof = new SpoofedConvar("sv_cheats");
++							svcheatsspoof->SetInt(1);
+ 
+-									if (Config->Vis_BulletTracer)
+-										BulletTracer->DrawTracers();
++							if (Interfaces::Engine->IsConnected() && Interfaces::Engine->IsInGame()) {
++								if (G::LocalPlayer)
++								{
++									Features::Visuals->Run();
++									Features::Visuals->RunSpectators();
+ 
+-									if (Config->Vis_PenetrationReticle) {
++									if (G::LocalPlayer->GetHealth() > 0 && G::LocalPlayer->IsAlive())
++									{
++										auto recoilspoof = Interfaces::Var->FindVar("cl_crosshair_recoil");
+ 
+-									}
+-								}
++										if (Config->Vis_RecoilOverlay)
++											recoilspoof->SetValue(1);
++										else
++											recoilspoof->SetValue(0);
++
++										if (Config->Vis_BulletTracer)
++											BulletTracer->DrawTracers();
+ 
+-								Features::LegitAimbot->Draw();
++										if (Config->Vis_PenetrationReticle) {
+ 
+-								for (auto c : LuaLoader->callbacks["hooks.paintTraverse"]) {
+-									if (c.fn.isFunction()) {
+-										try {
+-											c.fn();
+ 										}
+-										catch (luabridge::LuaException const& e) {
+-											const char* text = (std::string("Lua error: ") + std::string(e.what())).c_str();
+-
+-											Features::EventLogger->AddLog(text);
+-											Interfaces::Var->ConsoleColorPrintf(im2pt(Config->Misc_PrefixColor, 1.f), "[gideonproject] ");
+-											Interfaces::Var->ConsolePrintf(text);
+-											Interfaces::Var->ConsolePrintf("\n");
+-											Utilities->Console_Log(e.what());
++									}
++
++									Features::LegitAimbot->Draw();
++
++									for (auto c : LuaLoader->callbacks["hooks.paintTraverse"]) {
++										if (c.fn.isFunction()) {
++											try {
++												c.fn();
++											}
++											catch (luabridge::LuaException const& e) {
++												const char* text = (std::string("Lua error: ") + std::string(e.what())).c_str();
++
++												Features::EventLogger->AddLog(text);
++												Interfaces::Var->ConsoleColorPrintf(im2pt(Config->Misc_PrefixColor, 1.f), "[gideonproject] ");
++												Interfaces::Var->ConsolePrintf(text);
++												Interfaces::Var->ConsolePrintf("\n");
++												Utilities->Console_Log(e.what());
++											}
+ 										}
+ 									}
+ 								}
+ 							}
+ 						}
+-					}
+ 
+-					Features::EventLogger->Draw();
++						Features::EventLogger->Draw();
++					}
+ 				}
+-			}
+-			else {
+-				if (Interfaces::Engine->IsConnected() && Interfaces::Engine->IsInGame()) {
+-					if (G::LocalPlayer)
+-					{
+-						if (G::LocalPlayer->GetHealth() > 0 && G::LocalPlayer->IsAlive())
++				else {
++					if (Interfaces::Engine->IsConnected() && Interfaces::Engine->IsInGame()) {
++						if (G::LocalPlayer)
+ 						{
+-							if (Config->Vis_DisableScope && G::LocalPlayer->IsScoped()) {
+-								int w, h = 0;
+-								Interfaces::Engine->GetScreenSize(w, h);
+-								int gOffy = h / 2 / 2;
++							if (G::LocalPlayer->GetHealth() > 0 && G::LocalPlayer->IsAlive())
++							{
++								if (Config->Vis_DisableScope && G::LocalPlayer->IsScoped()) {
++									int w, h = 0;
++									Interfaces::Engine->GetScreenSize(w, h);
++									int gOffy = h / 2 / 2;
+ 
+-								Graphics::Drawing->GradientHorizontal(w / 2 - gOffy, h / 2, gOffy - 8, 1, CColor(0, 0, 0, 0), CColor(0, 0, 0, 255));
+-								Graphics::Drawing->GradientHorizontal(w / 2 + 8, h / 2, gOffy, 1, CColor(0, 0, 0, 255), CColor(0, 0, 0, 0));
++									Graphics::Drawing->GradientHorizontal(w / 2 - gOffy, h / 2, gOffy - 8, 1, CColor(0, 0, 0, 0), CColor(0, 0, 0, 255));
++									Graphics::Drawing->GradientHorizontal(w / 2 + 8, h / 2, gOffy, 1, CColor(0, 0, 0, 255), CColor(0, 0, 0, 0));
+ 
+-								Graphics::Drawing->GradientVertical(w / 2, h / 2 - gOffy, 1, gOffy - 8, CColor(0, 0, 0, 0), CColor(0, 0, 0, 255));
+-								Graphics::Drawing->GradientVertical(w / 2, h / 2 + 8, 1, gOffy, CColor(0, 0, 0, 255), CColor(0, 0, 0, 0));
++									Graphics::Drawing->GradientVertical(w / 2, h / 2 - gOffy, 1, gOffy - 8, CColor(0, 0, 0, 0), CColor(0, 0, 0, 255));
++									Graphics::Drawing->GradientVertical(w / 2, h / 2 + 8, 1, gOffy, CColor(0, 0, 0, 255), CColor(0, 0, 0, 0));
++								}
+ 							}
+ 						}
+ 					}
+diff --git a/Backend/Hooking/Hooks/Hooks.cpp b/Backend/Hooking/Hooks/Hooks.cpp
+index 4ad54f0..e964ac5 100644
+--- a/Backend/Hooking/Hooks/Hooks.cpp
++++ b/Backend/Hooking/Hooks/Hooks.cpp
+@@ -4,8 +4,8 @@ Cheat::Hooking::CHooks* Cheat::Hooking::Hooks = new Cheat::Hooking::CHooks();
+ 
+ using namespace Cheat::Hooking;
+ 
+-void CHooks::AddHookMgr(std::string name, VTableHook* mgr) {
+-	m_vecTableHooks.insert(std::make_pair(name, mgr));
++void CHooks::AddHookMgr(std::string name, std::unique_ptr<VTableHook> mgr) {
++	m_vecTableHooks.insert(std::make_pair(name, std::move(mgr)));
+ }
+ 
+ void CHooks::ReleaseHookMgr(std::string name) {
+@@ -13,6 +13,3 @@ void CHooks::ReleaseHookMgr(std::string name) {
+ 	m_vecTableHooks.erase(name);
+ }
+ 
+-VTableHook* CHooks::GetHookMgr(std::string name) {
+-	return m_vecTableHooks[name];
+-}
+\ No newline at end of file
+diff --git a/Backend/Hooking/Hooks/Hooks.h b/Backend/Hooking/Hooks/Hooks.h
+index bb379e2..fb74bb7 100644
+--- a/Backend/Hooking/Hooks/Hooks.h
++++ b/Backend/Hooking/Hooks/Hooks.h
+@@ -6,13 +6,12 @@ namespace Cheat {
+ 	namespace Hooking {
+ 		class CHooks {
+ 		public:
+-			VTableHook * GetHookMgr(std::string name);
+ 			
+-			void AddHookMgr(std::string name, VTableHook* mgr);
++			void AddHookMgr(std::string name, std::unique_ptr<Hooking::VTableHook> mgr);
+ 			void ReleaseHookMgr(std::string name);
+ 
+ 		private:
+-			std::map<std::string, VTableHook*> m_vecTableHooks;
++			std::map<std::string, std::unique_ptr<Hooking::VTableHook>> m_vecTableHooks;
+ 		};
+ 
+ 		extern CHooks* Hooks;
+diff --git a/Backend/Hooking/VTableHooking.cpp b/Backend/Hooking/VTableHooking.cpp
+index 1edc886..23d98ce 100644
+--- a/Backend/Hooking/VTableHooking.cpp
++++ b/Backend/Hooking/VTableHooking.cpp
+@@ -2,68 +2,3 @@
+ 
+ using namespace Cheat::Hooking;
+ 
+-VTableHook::VTableHook(PVOID pClass) {
+-	m_ppClassBase = (PPDWORD)pClass;
+-	m_pOriginalVMTable = *(PPDWORD)pClass;
+-
+-	int dwLength = CalculateLength();
+-
+-	m_pNewVMTable = new DWORD[dwLength];
+-	memcpy(m_pNewVMTable, m_pOriginalVMTable, dwLength * sizeof(DWORD));
+-
+-	DWORD old;
+-
+-	VirtualProtect(m_ppClassBase, sizeof(DWORD), PAGE_EXECUTE_READWRITE, &old);
+-	*m_ppClassBase = m_pNewVMTable;
+-	VirtualProtect(m_ppClassBase, sizeof(DWORD), old, &old);
+-}
+-
+-VTableHook::~VTableHook() {
+-	RestoreTable();
+-
+-	delete[] m_pNewVMTable;
+-}
+-
+-void VTableHook::RestoreTable() {
+-	DWORD old;
+-
+-	VirtualProtect(m_ppClassBase, sizeof(DWORD), PAGE_EXECUTE_READWRITE, &old);
+-	*m_ppClassBase = m_pOriginalVMTable;
+-	VirtualProtect(m_ppClassBase, sizeof(DWORD), old, &old);
+-}
+-
+-void VTableHook::Unhook(int index) {
+-	auto it = m_vecHookedIndexes.find(index);
+-
+-	if (it != m_vecHookedIndexes.end()) {
+-		m_pNewVMTable[index] = (DWORD)it->second;
+-		m_vecHookedIndexes.erase(it);
+-	}
+-}
+-
+-DWORD VTableHook::Hook(int index, void* fnHook) {
+-	DWORD dwOld = (DWORD)m_pOriginalVMTable[index];
+-
+-	m_pNewVMTable[index] = (DWORD)fnHook;
+-	m_vecHookedIndexes.insert(std::make_pair(index, (DWORD)dwOld));
+-
+-	return dwOld;
+-}
+-
+-DWORD VTableHook::GetOriginal(int index) {
+-	return m_pOriginalVMTable[index];
+-}
+-
+-int VTableHook::CalculateLength() {
+-	uint32_t dwIndex = 0;
+-
+-	if (!m_pOriginalVMTable)
+-		return 0;
+-
+-	for (dwIndex = 0; m_pOriginalVMTable[dwIndex]; dwIndex++) {
+-		if (IsBadCodePtr((FARPROC)m_pOriginalVMTable[dwIndex]))
+-			break;
+-	}
+-
+-	return dwIndex;
+-}
+\ No newline at end of file
+diff --git a/Backend/Hooking/VTableHooking.h b/Backend/Hooking/VTableHooking.h
+index 7b5ab21..382815a 100644
+--- a/Backend/Hooking/VTableHooking.h
++++ b/Backend/Hooking/VTableHooking.h
+@@ -3,30 +3,160 @@
+ 
+ namespace Cheat {
+ 	namespace Hooking 
+-	{
+-		typedef PDWORD* PPDWORD;
++	{
++		typedef PDWORD* PPDWORD;
++
++		class VFTableHook 
++		{
++			VFTableHook(const VFTableHook&) = delete;
++		public:
++
++			template<class Type>
++			static Type HookManual(uintptr_t *instance, int offset, Type hook)
++			{
++				DWORD Dummy;
++				Type fnOld = (Type)instance[offset];
++				VirtualProtect((void*)(instance + offset * 0x4), 0x4, PAGE_EXECUTE_READWRITE, &Dummy);
++				instance[offset] = (uintptr_t)hook;
++				VirtualProtect((void*)(instance + offset * 0x4), 0x4, Dummy, &Dummy);
++				return fnOld;
++			}
++
++		private:
++
++			static int Unprotect(void *region)
++			{
++				MEMORY_BASIC_INFORMATION mbi;
++				VirtualQuery((LPCVOID)region, &mbi, sizeof(mbi));
++				VirtualProtect(mbi.BaseAddress, mbi.RegionSize, PAGE_EXECUTE_READWRITE, &mbi.Protect);
++				return mbi.Protect;
++			}
++
++			static void Protect(void *region, int protection)
++			{
++				MEMORY_BASIC_INFORMATION mbi;
++				VirtualQuery((LPCVOID)region, &mbi, sizeof(mbi));
++				VirtualProtect(mbi.BaseAddress, mbi.RegionSize, protection, &mbi.Protect);
++			}
++		};
++
++		class ProtectGuard
++		{
++		public:
++
++			ProtectGuard(void *base, uint32_t len, uint32_t protect)
++			{
++				this->base = base;
++				this->len = len;
++
++				if (!VirtualProtect(base, len, protect, (PDWORD)&old_protect))
++					throw std::runtime_error("Failed to protect region!");
++			}
++
++			~ProtectGuard()
++			{
++				VirtualProtect(base, len, old_protect, (PDWORD)&old_protect);
++			}
++
++		private:
++
++			void *base;
++			uint32_t len;
++			uint32_t old_protect;
++		};
+ 
+-		class VTableHook {
+-			VTableHook(const VTableHook&) = delete;
+ 
+-		public:
+-			VTableHook(PVOID pClass);
+-			~VTableHook();
+-
+-			void RestoreTable();
+-			void Unhook(int index);
+-
+-			DWORD Hook(int index, void* fnHook);
+-			DWORD GetOriginal(int index);
+-
+-		private:
+-			int CalculateLength();
+-
+-			std::map<int, DWORD> m_vecHookedIndexes;
+-
+-			PPDWORD m_ppClassBase;
+-			PDWORD m_pOriginalVMTable;
+-			PDWORD m_pNewVMTable;
++		class VTableHook
++		{
++
++		public:
++
++			VTableHook() : class_base(nullptr), method_count(0), shadow_vtable(nullptr), original_vtable(nullptr) {}
++			VTableHook(void *base) : class_base(base), method_count(0), shadow_vtable(nullptr), original_vtable(nullptr) {}
++			~VTableHook()
++			{
++				RestoreTable();
++
++				delete[] shadow_vtable;
++			}
++
++			inline void Setup(void *base = nullptr)
++			{
++				if (base != nullptr)
++					class_base = base;
++
++				if (class_base == nullptr)
++					return;
++
++				original_vtable = *(uintptr_t**)class_base;
++				method_count = GetMethodCount(original_vtable);
++
++				if (method_count == 0)
++					return;
++
++				shadow_vtable = new uintptr_t[method_count + 1]();
++
++				shadow_vtable[0] = original_vtable[-1];
++				std::memcpy(&shadow_vtable[1], original_vtable, method_count * sizeof(uintptr_t));
++
++				try
++				{
++					auto guard = ProtectGuard{ class_base, sizeof(uintptr_t), PAGE_READWRITE };
++					*(uintptr_t**)class_base = &shadow_vtable[1];
++				}
++				catch (...)
++				{
++					delete[] shadow_vtable;
++				}
++			}
++
++			template<typename T>
++			inline void Hook(uint32_t index, T method)
++			{
++				shadow_vtable[index + 1] = reinterpret_cast<uintptr_t>(method);
++			}
++
++			inline void Unhook(uint32_t index)
++			{
++				shadow_vtable[index + 1] = original_vtable[index];
++			}
++
++			template<typename T>
++			inline T GetOriginal(uint32_t index)
++			{
++				return (T)original_vtable[index];
++			}
++
++			inline void RestoreTable()
++			{
++				try
++				{
++					if (original_vtable != nullptr)
++					{
++						auto guard = ProtectGuard{ class_base, sizeof(uintptr_t), PAGE_READWRITE };
++						*(uintptr_t**)class_base = original_vtable;
++						original_vtable = nullptr;
++					}
++				}
++				catch (...) {}
++			}
++
++		private:
++
++			inline uint32_t GetMethodCount(uintptr_t *vtable_start)
++			{
++				uint32_t len = -1;
++
++				do ++len; while (vtable_start[len]);
++
++				return len;
++			}
++
++			void *class_base;
++			uint32_t method_count;
++			uintptr_t *shadow_vtable;
++			uintptr_t *original_vtable;
+ 		};
++
+ 	}
+ }
+\ No newline at end of file
+diff --git a/Backend/SDK/CBaseEntity.h b/Backend/SDK/CBaseEntity.h
+index 8e9b789..4525471 100644
+--- a/Backend/SDK/CBaseEntity.h
++++ b/Backend/SDK/CBaseEntity.h
+@@ -682,12 +682,12 @@ public:
+ 		return *reinterpret_cast<Vector*>(uintptr_t(this) + offys.m_angeyeangles);
+ 	}
+ 
+-	QAngle* EasyEyeAngles()
++	Vector* GetEyeAnglesPtr()
+ 	{
+ 		if (!this)
+-			return new QAngle();
++			return new Vector();
+ 
+-		return (QAngle*)((uintptr_t)this + offys.m_angeyeangles);
++		return (Vector*)((uintptr_t)this + offys.m_angeyeangles);
+ 	}
+ 
+ 	void SetEyeAngles(Vector angles)
+diff --git a/Backend/Utility/Timer.cpp b/Backend/Utility/Timer.cpp
+index 7c53d66..a36ba6e 100644
+--- a/Backend/Utility/Timer.cpp
++++ b/Backend/Utility/Timer.cpp
+@@ -3,23 +3,28 @@
+ bool CTimer::delay(DWORD dwMsec)
+ {
+ 	if (!bEnable)
+-		return false;
++		return true;
+ 
+ 	if (!dwTime)
+ 		dwTime = GetTickCount64();
+ 
+-	if ((dwTime + dwMsec) < GetTickCount64())
++	if (dwTime + dwMsec < GetTickCount64())
++	{
++		//dwTime = 0;
++		bEnable = false;
+ 		return true;
++	}
+ 	else
+ 	{
+-		bEnable = false;
+ 		dwTime = 0;
++		bEnable = true;
+ 		return false;
+ 	}
+ }
+ 
+ void CTimer::reset()
+ {
++	dwTime = 0;
+ 	bEnable = true;
+ }
+ 
+diff --git a/Frontend/Menu/Menu.cpp b/Frontend/Menu/Menu.cpp
+index a4612b7..9a0f786 100644
+--- a/Frontend/Menu/Menu.cpp
++++ b/Frontend/Menu/Menu.cpp
+@@ -18,7 +18,7 @@
+ #include "../../Backend/Lua/LuaLoader.h"
+ #include "../../Backend/Features/Visuals/EventLogger.h"
+ #include "../../Backend/SDK/GlobalDefenitions.h"
+-
++#include "../../Backend/Features/Misc/Misc.h"
+ IDirect3DTexture9* iconTexture = nullptr;
+ 
+ using namespace Graphics;
+@@ -752,13 +752,13 @@ void CMenu::Draw() {
+ 					return Config->Legit_Weapons[7 + Config->Legit_CurrentWeapon[1]];
+ 			};
+ 			auto lb_getSettingssniper = []() -> LBWeapon_t& {
+-				return Config->Legit_Weapons[7 + 10 + Config->Legit_CurrentWeapon[2]];
++				return Config->Legit_Weapons[17 + Config->Legit_CurrentWeapon[2]];
+ 			};
+ 			auto lb_getSettingsmps = []() -> LBWeapon_t& {
+-				return Config->Legit_Weapons[7 + 10 + 4 + Config->Legit_CurrentWeapon[3]];
++				return Config->Legit_Weapons[21 + Config->Legit_CurrentWeapon[3]];
+ 			};
+ 			auto lb_getSettingsother = []() -> LBWeapon_t& {
+-					return Config->Legit_Weapons[7 + 10 + 4 + 7 + Config->Legit_CurrentWeapon[4]];
++					return Config->Legit_Weapons[28 + Config->Legit_CurrentWeapon[4]];
+ 			};
+ 
+ 			ImGui::BeginChild("##child_legitbot_aim");
+@@ -776,6 +776,7 @@ void CMenu::Draw() {
+ 						ImGui::Checkbox("Through walls", &Config->Legit_WallAttack);
+ 						ImGui::Checkbox("Smoke check", &Config->Legit_SmokeCheck);
+ 						ImGui::Checkbox("Ignore Jumping", &Config->Legit_JumpCheck);
++						ImGui::Checkbox("Engine Prediction", &Config->Legit_EnginePrediction);
+ 						ImGui::Checkbox("Draw FOV", &Config->Legit_DrawFOV);
+ 						ImGui::Checkbox("Draw aim spot", &Config->Legit_DrawAimSpot);
+ 
+@@ -1777,11 +1778,27 @@ void CMenu::Draw() {
+ 					ImGui::PushStyleColor(ImGuiCol_Border, IMCOLOR_PINK);
+ 					ImGui::BeginChild("Players", ImVec2(268.f, 420.f), true, ImGuiWindowFlags_ChildWindowDrawTitle);
+ 					{
+-						static char buffer[1024] = { 0 };
+-
+-						ImGui::InputText("##playerlst-f", buffer, sizeof(buffer));
+-						ImGui::ListBoxHeader("##playerlist", ImVec2(264.f, 300.f));
+-						ImGui::ListBoxFooter();
++						char *names[20];
++						int i;
++						int playerIndxes[20];
++						static int selected;
++						if (Interfaces::Engine->IsInGame() && G::LocalPlayer)
++						{
++							for (int plindex = 1; plindex < Interfaces::Engine->GetMaxClients(); ++plindex)
++							{
++								if (playerlistarr[plindex].playerptr != NULL)
++								{
++									auto info = playerlistarr[plindex].info;
++									names[i] = new char[(sizeof(info.name) / sizeof(char)) + 1];
++									strcpy(names[i], info.name);
++									playerIndxes[i] = plindex;
++									i++;
++								}
++							}
++							ImGui::ListBox("##playerlist", &selected, names, i);
++							ImGui::ListBoxFooter();
++						}
++					
+ 
+ 						if (ImGui::Button("Add to whitelist", ImVec2(264.f, 20.f)))
+ 							;
+@@ -1806,10 +1823,10 @@ void CMenu::Draw() {
+ 						static bool		baim = false;
+ 
+ 						ImGui::Text("Custom pitch");
+-						ImGui::InputFloat("##custompitch", &customPitch);
++						ImGui::SliderFloat("##custompitch", &customPitch,0.f,89.f);
+ 
+ 						ImGui::Text("Custom yaw");
+-						ImGui::InputFloat("##customyaw", &customYaw);
++						ImGui::SliderFloat("##customyaw", &customYaw, 0.f, 180.f);
+ 
+ 						ImGui::Checkbox("Prioritize", &prioritize);
+ 						ImGui::Checkbox("Prefer body-aim", &baim);
+diff --git a/Other/version.h b/Other/version.h
+index 5ea9d2d..f1cbeb4 100644
+--- a/Other/version.h
++++ b/Other/version.h
+@@ -1,6 +1,2 @@
+ #pragma once
+-<<<<<<< Updated upstream
+-#define VERSION_REVISION 1276
+-=======
+-#define VERSION_REVISION 1273
+->>>>>>> Stashed changes
++#define VERSION_REVISION 1309
+-- 
+2.15.1.windows.2
+

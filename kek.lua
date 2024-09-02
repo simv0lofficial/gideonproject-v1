@@ -1,0 +1,1 @@
+debug.log("Sasnue chuvaki eta Maxim s Kirillom")
